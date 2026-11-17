@@ -5999,6 +5999,25 @@ html.hnl-motion-enabled
   flex-shrink: 0;
 }
 
+.hnl-newsletter-retry {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f0d99f;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.hnl-newsletter-retry:focus-visible {
+  outline: 2px solid #f0d99f;
+  outline-offset: 3px;
+}
+
 .hnl-newsletter-consent {
   display: flex;
   grid-column: 1 / -1;

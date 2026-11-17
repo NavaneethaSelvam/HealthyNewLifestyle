@@ -42,7 +42,8 @@ export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
-  const [notificationSent, setNotificationSent] = useState(true);
+  const [adminNotificationSent, setAdminNotificationSent] = useState(false);
+  const [customerConfirmationSent, setCustomerConfirmationSent] = useState(false);
   const requestRef = useRef<{ signature: string; id: string } | null>(null);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -73,17 +74,24 @@ export default function ContactPage() {
 
     try {
       const result = await submitCustomerForm({ ...submission, submissionId });
-      setNotificationSent(result.notificationSent !== false);
+      const adminSent = result.adminNotificationSent === true;
+      const customerSent = result.customerConfirmationSent === true;
+      setAdminNotificationSent(adminSent);
+      setCustomerConfirmationSent(customerSent);
       setSubmitted(true);
+      const emailDeliveryComplete = adminSent && customerSent;
       addToast({
-        type: result.notificationSent === false ? "info" : "success",
-        title: result.notificationSent === false ? "Enquiry recorded" : "Enquiry sent",
-        message:
-          result.notificationSent === false
-            ? "Your enquiry was recorded, but the team email notification could not be sent."
-            : result.duplicate
-              ? "This enquiry was already received by our team."
-              : "Thank you for reaching out to OrganicandNutrition.",
+        type: emailDeliveryComplete ? "success" : "info",
+        title: emailDeliveryComplete ? "Enquiry sent" : "Enquiry recorded",
+        message: !adminSent && !customerSent
+          ? "Your enquiry was recorded, but neither email could be sent. You can retry the email delivery below."
+          : !adminSent
+            ? "Your enquiry was recorded, but the team notification email could not be sent. You can retry below."
+            : !customerSent
+              ? "Your enquiry reached the team, but the confirmation email could not be sent. You can retry below."
+              : result.duplicate
+                ? "This enquiry was already received by our team."
+                : "Thank you for reaching out to OrganicandNutrition.",
       });
     } catch (error) {
       const errorMessage =
@@ -160,21 +168,29 @@ export default function ContactPage() {
                   <div className="hnl-success-badge-icon">✓</div>
                   <h3>Thank you, {name}!</h3>
                   <p>
-                    {notificationSent
-                      ? `Your enquiry has been recorded. Our team can reach you at ${mobile}.`
-                      : "Your enquiry was recorded, but the team email notification could not be sent. Please call 6381243416 to follow up."}
+                    {adminNotificationSent && customerConfirmationSent
+                      ? `A confirmation email was sent to ${email}. Our team can reach you at ${mobile}.`
+                      : !adminNotificationSent && !customerConfirmationSent
+                        ? "Your enquiry was recorded, but neither the team notification nor confirmation email could be sent."
+                        : !adminNotificationSent
+                          ? "Your enquiry was recorded, but the team notification email could not be sent."
+                          : `Your enquiry reached the team, but the confirmation email to ${email} could not be sent.`}
                   </p>
                   <button
                     type="button"
                     className="hnl-button hnl-button--outline"
                     onClick={() => {
                       setSubmitted(false);
-                      setMessage("");
                       setSubmissionError("");
-                      requestRef.current = null;
+                      if (adminNotificationSent && customerConfirmationSent) {
+                        setMessage("");
+                        requestRef.current = null;
+                      }
                     }}
                   >
-                    Send another message
+                    {adminNotificationSent && customerConfirmationSent
+                      ? "Send another message"
+                      : "Retry email delivery"}
                   </button>
                 </div>
               ) : (
@@ -215,7 +231,7 @@ export default function ContactPage() {
 
                     <div className="hnl-field hnl-field--full">
                       <label className="hnl-field-label" htmlFor="contact-email">
-                        Email Address (Optional)
+                        Email Address *
                       </label>
                       <input
                         id="contact-email"
@@ -226,6 +242,7 @@ export default function ContactPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="e.g. ramanathan@example.com"
+                        required
                       />
                     </div>
 

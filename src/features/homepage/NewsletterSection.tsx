@@ -7,6 +7,7 @@ import { submitCustomerForm } from "@/services/customerForms";
 export function NewsletterSection() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
   const requestRef = useRef<{ email: string; id: string } | null>(null);
@@ -25,14 +26,16 @@ export function NewsletterSection() {
     setSubmissionError("");
 
     try {
-      await submitCustomerForm({
+      const result = await submitCustomerForm({
         operation: "newsletter",
         submissionId,
         email: normalizedEmail,
         consent: true,
       });
+      const emailSent = result.customerConfirmationSent === true;
+      setConfirmationSent(emailSent);
       setSubmitted(true);
-      requestRef.current = null;
+      if (emailSent) requestRef.current = null;
     } catch (error) {
       setSubmissionError(
         error instanceof Error
@@ -59,8 +62,23 @@ export function NewsletterSection() {
         <div className="hnl-newsletter-form-wrapper">
           {submitted ? (
             <div className="hnl-newsletter-success" role="status">
-              <span className="hnl-newsletter-check" aria-hidden="true">✓</span>
-              <span>Thank you. Your request has been saved for the OrganicandNutrition team.</span>
+              <span className="hnl-newsletter-check" aria-hidden="true">
+                {confirmationSent ? "✓" : "!"}
+              </span>
+              <span>
+                {confirmationSent
+                  ? "Your request is recorded. A confirmation email was sent; this is not a marketing email."
+                  : "Your request is recorded, but the confirmation email could not be sent."}
+                {!confirmationSent && (
+                  <button
+                    className="hnl-newsletter-retry"
+                    type="button"
+                    onClick={() => setSubmitted(false)}
+                  >
+                    Retry email
+                  </button>
+                )}
+              </span>
             </div>
           ) : (
             <form className="hnl-newsletter-form" onSubmit={handleSubmit}>

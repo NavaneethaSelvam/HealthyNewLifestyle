@@ -10,11 +10,25 @@ const SHEET_CONFIG = {
       "Message",
       "Notification Status",
       "Submission ID",
+      "Customer Confirmation Status",
     ],
+    idColumn: 8,
+    adminNotificationStatusColumn: 7,
+    customerConfirmationStatusColumn: 9,
+    legacyHeaderCount: 8,
   },
   newsletter: {
     sheetName: "Newsletter Requests",
-    headers: ["Submitted At", "Email", "Consent", "Submission ID"],
+    headers: [
+      "Submitted At",
+      "Email",
+      "Consent",
+      "Submission ID",
+      "Confirmation Status",
+    ],
+    idColumn: 4,
+    customerConfirmationStatusColumn: 5,
+    legacyHeaderCount: 4,
   },
   review: {
     sheetName: "Product Reviews",
@@ -29,6 +43,8 @@ const SHEET_CONFIG = {
       "Notification Status",
       "Submission ID",
     ],
+    idColumn: 9,
+    adminNotificationStatusColumn: 8,
   },
 };
 
@@ -56,7 +72,7 @@ function doPost(event) {
     }
 
     const submission = validateSubmission_(request);
-    const notificationEmail =
+    const adminEmail =
       submission.operation === "contact" || submission.operation === "review"
         ? getNotificationEmail_()
         : "";
@@ -67,7 +83,7 @@ function doPost(event) {
       const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
       const config = SHEET_CONFIG[submission.operation];
       const sheet = getOrCreateSheet_(spreadsheet, config);
-      const idColumn = config.headers.length;
+      const idColumn = config.idColumn;
       const cache = CacheService.getScriptCache();
       const cacheKey = submission.operation + ":" + submission.submissionId;
       const cachedRow = Number(cache.get(cacheKey));
@@ -87,39 +103,63 @@ function doPost(event) {
         cache.put(cacheKey, String(rowNumber), DUPLICATE_TTL_SECONDS);
       }
 
-      if (notificationEmail) {
-        const statusColumn = idColumn - 1;
-        const currentStatus = sheet.getRange(rowNumber, statusColumn).getDisplayValue();
-        if (currentStatus !== "Sent") {
-          try {
-            sendNotification_(notificationEmail, submission);
-            sheet.getRange(rowNumber, statusColumn).setValue("Sent");
-            cache.put(cacheKey, String(rowNumber), DUPLICATE_TTL_SECONDS);
-            return jsonResponse_({
-              success: true,
-              duplicate: duplicate,
-              notificationSent: true,
-            });
-          } catch (error) {
-            sheet.getRange(rowNumber, statusColumn).setValue("Failed");
-            return jsonResponse_({
-              success: true,
-              duplicate: duplicate,
-              notificationSent: false,
-              warning:
-                "Your submission was recorded, but the team email notification could not be sent.",
-            });
-          }
-        }
-
+      if (submission.operation === "contact") {
+        const adminNotificationSent = sendEmailIfNeeded_(
+          sheet,
+          rowNumber,
+          config.adminNotificationStatusColumn,
+          function () {
+            sendContactNotification_(adminEmail, submission);
+          },
+        );
+        const customerConfirmationSent = sendEmailIfNeeded_(
+          sheet,
+          rowNumber,
+          config.customerConfirmationStatusColumn,
+          function () {
+            sendContactConfirmation_(adminEmail, submission);
+          },
+        );
+        cache.put(cacheKey, String(rowNumber), DUPLICATE_TTL_SECONDS);
         return jsonResponse_({
           success: true,
           duplicate: duplicate,
-          notificationSent: true,
+          adminNotificationSent: adminNotificationSent,
+          customerConfirmationSent: customerConfirmationSent,
         });
       }
 
-      return jsonResponse_({ success: true, duplicate: duplicate });
+      if (submission.operation === "newsletter") {
+        const customerConfirmationSent = sendEmailIfNeeded_(
+          sheet,
+          rowNumber,
+          config.customerConfirmationStatusColumn,
+          function () {
+            sendNewsletterConfirmation_(submission);
+          },
+        );
+        cache.put(cacheKey, String(rowNumber), DUPLICATE_TTL_SECONDS);
+        return jsonResponse_({
+          success: true,
+          duplicate: duplicate,
+          customerConfirmationSent: customerConfirmationSent,
+        });
+      }
+
+      const notificationSent = sendEmailIfNeeded_(
+        sheet,
+        rowNumber,
+        config.adminNotificationStatusColumn,
+        function () {
+          sendReviewNotification_(adminEmail, submission);
+        },
+      );
+      cache.put(cacheKey, String(rowNumber), DUPLICATE_TTL_SECONDS);
+      return jsonResponse_({
+        success: true,
+        duplicate: duplicate,
+        notificationSent: notificationSent,
+      });
     } finally {
       lock.releaseLock();
     }
@@ -206,13 +246,16 @@ function validateSubmission_(request) {
 
   if (operation === "contact") {
     const name = requiredText_(request.name, 100, "INVALID_NAME");
-    const email = optionalText_(request.email, 254, "INVALID_EMAIL").toLowerCase();
+    const email = requiredText_(request.email, 254, "INVALID_EMAIL").toLowerCase();
     const phone = requiredText_(request.phone, 30, "INVALID_PHONE");
     const topic = requiredText_(request.topic, 120, "INVALID_TOPIC");
     const message = requiredText_(request.message, 5000, "INVALID_MESSAGE");
     validateName_(name);
-    if (email && !isValidEmail_(email)) {
+    if (!isValidEmail_(email)) {
       throw new Error("INVALID_EMAIL");
+    }
+    if (/[\u0000-\u001f\u007f]/.test(topic)) {
+      throw new Error("INVALID_TOPIC");
     }
     validatePhone_(phone);
 
@@ -340,7 +383,28 @@ function getOrCreateSheet_(spreadsheet, config) {
     return existingHeaders[index] === header;
   });
   if (!headersMatch) {
-    throw new Error("SHEET_HEADERS_INVALID");
+    const legacyHeadersMatch =
+      config.legacyHeaderCount &&
+      config.headers.slice(0, config.legacyHeaderCount).every(function (header, index) {
+        return existingHeaders[index] === header;
+      });
+    const addedHeadersAreEmpty =
+      legacyHeadersMatch &&
+      existingHeaders.slice(config.legacyHeaderCount).every(function (header) {
+        return !header;
+      });
+    if (!addedHeadersAreEmpty) {
+      throw new Error("SHEET_HEADERS_INVALID");
+    }
+    sheet
+      .getRange(
+        1,
+        config.legacyHeaderCount + 1,
+        1,
+        config.headers.length - config.legacyHeaderCount,
+      )
+      .setValues([config.headers.slice(config.legacyHeaderCount)]);
+    sheet.setFrozenRows(1);
   }
   return sheet;
 }
@@ -368,9 +432,11 @@ function buildRow_(submission) {
       submission.topic,
       submission.message,
       "Pending",
+      submission.submissionId,
+      "Pending",
     );
   } else if (submission.operation === "newsletter") {
-    values.push(submission.email, "Yes");
+    values.push(submission.email, "Yes", submission.submissionId, "Pending");
   } else {
     values.push(
       submission.productId,
@@ -382,45 +448,108 @@ function buildRow_(submission) {
       "Pending",
     );
   }
-  values.push(submission.submissionId);
+  if (submission.operation === "review") {
+    values.push(submission.submissionId);
+  }
   return values;
 }
 
-function sendNotification_(recipient, submission) {
+function sendEmailIfNeeded_(sheet, rowNumber, statusColumn, sendEmail) {
+  if (sheet.getRange(rowNumber, statusColumn).getDisplayValue() === "Sent") {
+    return true;
+  }
+
+  try {
+    sendEmail();
+    sheet.getRange(rowNumber, statusColumn).setValue("Sent");
+    return true;
+  } catch (error) {
+    sheet.getRange(rowNumber, statusColumn).setValue("Failed");
+    return false;
+  }
+}
+
+function sendContactNotification_(recipient, submission) {
+  const body = [
+    "A new contact enquiry was recorded.",
+    "",
+    "Name: " + submission.name,
+    "Email: " + submission.email,
+    "Phone: " + submission.phone,
+    "Subject: " + submission.topic,
+    "",
+    "Message:",
+    submission.message,
+    "",
+    "Submission ID: " + submission.submissionId,
+  ].join("\n");
+  MailApp.sendEmail({
+    to: recipient,
+    subject: "Contact enquiry: " + submission.topic,
+    body: body,
+    replyTo: submission.email,
+    name: "OrganicandNutrition",
+  });
+}
+
+function sendContactConfirmation_(replyAddress, submission) {
+  const body = [
+    "Hello " + submission.name + ",",
+    "",
+    "We have received your enquiry about: " + submission.topic,
+    "Our team will review your message and get back to you.",
+    "",
+    "Your message:",
+    submission.message,
+    "",
+    "If you need to add information, reply to this email.",
+    "",
+    "OrganicandNutrition",
+  ].join("\n");
+  MailApp.sendEmail({
+    to: submission.email,
+    subject: "We received your enquiry",
+    body: body,
+    replyTo: replyAddress,
+    name: "OrganicandNutrition",
+  });
+}
+
+function sendNewsletterConfirmation_(submission) {
+  if (submission.consent !== true) {
+    throw new Error("INVALID_CONSENT");
+  }
+  MailApp.sendEmail({
+    to: submission.email,
+    subject: "Your newsletter request was received",
+    body: [
+      "Thank you for requesting updates from OrganicandNutrition.",
+      "",
+      "This email only confirms that we received your request. It is not a marketing message.",
+      "No marketing campaigns are sent automatically by this website.",
+    ].join("\n"),
+    name: "OrganicandNutrition",
+  });
+}
+
+function sendReviewNotification_(recipient, submission) {
   let subject;
   let body;
-  if (submission.operation === "contact") {
-    subject = "New HealthyNewLifestyle contact enquiry";
-    body = [
-      "A new contact enquiry was recorded.",
-      "",
-      "Name: " + submission.name,
-      "Email: " + (submission.email || "Not provided"),
-      "Phone: " + submission.phone,
-      "Topic: " + submission.topic,
-      "",
-      "Message:",
-      submission.message,
-      "",
-      "Submission ID: " + submission.submissionId,
-    ].join("\n");
-  } else {
-    subject = "New HealthyNewLifestyle product review to moderate";
-    body = [
-      "A product review was received for moderation. It has not been published.",
-      "",
-      "Product: " + submission.productName,
-      "Product ID: " + submission.productId,
-      "Rating: " + submission.rating + "/5",
-      "Name: " + submission.name,
-      "Title: " + (submission.title || "Not provided"),
-      "",
-      "Review:",
-      submission.comment,
-      "",
-      "Submission ID: " + submission.submissionId,
-    ].join("\n");
-  }
+  subject = "New HealthyNewLifestyle product review to moderate";
+  body = [
+    "A product review was received for moderation. It has not been published.",
+    "",
+    "Product: " + submission.productName,
+    "Product ID: " + submission.productId,
+    "Rating: " + submission.rating + "/5",
+    "Name: " + submission.name,
+    "Title: " + (submission.title || "Not provided"),
+    "",
+    "Review:",
+    submission.comment,
+    "",
+    "Submission ID: " + submission.submissionId,
+  ].join("\n");
   MailApp.sendEmail({ to: recipient, subject: subject, body: body });
 }
 

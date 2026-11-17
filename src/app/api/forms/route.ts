@@ -99,27 +99,29 @@ function validateSubmission(
 
   if (input.operation === "contact") {
     const name = getText(input, "name", 100);
-    const email = getOptionalText(input, "email", 254);
+    const email = getText(input, "email", 254);
     const phone = getText(input, "phone", 30);
     const topic = getText(input, "topic", 120);
     const message = getText(input, "message", MAX_MESSAGE_LENGTH);
     const phoneDigits = phone?.replace(/\D/g, "").length ?? 0;
+    const hasHeaderControlCharacters = Boolean(topic && /[\u0000-\u001f\u007f]/.test(topic));
 
     if (
       !name ||
       !isValidName(name) ||
-      email === null ||
-      (email !== "" && !isValidEmail(email)) ||
+      !email ||
+      !isValidEmail(email) ||
       !phone ||
       !/^[+()\d\s.-]{7,30}$/.test(phone) ||
       phoneDigits < 7 ||
       phoneDigits > 15 ||
       !topic ||
+      hasHeaderControlCharacters ||
       !message
     ) {
       return {
         success: false,
-        error: "Enter a valid name, phone number, topic, and message. Email is optional.",
+        error: "Enter a valid name, email, phone number, topic, and message.",
       };
     }
 
@@ -289,16 +291,20 @@ export async function POST(request: Request) {
       return responseError(message, 502);
     }
 
-    const requiresNotification =
-      validation.submission.operation === "contact" ||
-      validation.submission.operation === "review";
-
     return NextResponse.json({
       success: true,
       duplicate: result.duplicate === true,
-      ...(requiresNotification
-        ? { notificationSent: result.notificationSent === true }
-        : {}),
+      ...(validation.submission.operation === "contact"
+        ? {
+            adminNotificationSent: result.adminNotificationSent === true,
+            customerConfirmationSent: result.customerConfirmationSent === true,
+          }
+        : validation.submission.operation === "newsletter"
+          ? {
+              customerConfirmationSent:
+                result.customerConfirmationSent === true,
+            }
+          : { notificationSent: result.notificationSent === true }),
     });
   } catch {
     return responseError(

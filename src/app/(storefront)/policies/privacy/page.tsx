@@ -27,7 +27,7 @@ export default function PrivacyPolicyPage() {
         },
         {
           heading: "Customer form submissions",
-          body: "When the optional forms service is configured, contact enquiries, consented newsletter requests, and product reviews are forwarded to a Google Sheet controlled by OrganicandNutrition. Contact enquiries and reviews also trigger an email notification to the address configured by the business. Newsletter requests are recorded for the team; updates are not sent automatically. These submissions are not saved in this browser's local storage.",
+          body: "When the optional forms service is configured, contact enquiries, consented newsletter requests, and product reviews are forwarded to a Google Sheet controlled by OrganicandNutrition. Contact enquiries send the provided details to the configured admin email and send a confirmation to the customer. Consented newsletter requests receive a receipt confirmation only; marketing campaigns are not sent by this integration. Product reviews are emailed to the configured admin for moderation. These submissions are not saved in this browser's local storage.",
         },
         {
           heading: "Questions",

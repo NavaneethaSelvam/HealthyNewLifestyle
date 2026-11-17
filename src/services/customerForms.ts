@@ -29,6 +29,8 @@ type FormResponse = {
   success: true;
   duplicate: boolean;
   notificationSent?: boolean;
+  adminNotificationSent?: boolean;
+  customerConfirmationSent?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +69,12 @@ export async function submitCustomerForm(
   return {
     success: true,
     duplicate: result.duplicate === true,
+    ...(typeof result.adminNotificationSent === "boolean"
+      ? { adminNotificationSent: result.adminNotificationSent }
+      : {}),
+    ...(typeof result.customerConfirmationSent === "boolean"
+      ? { customerConfirmationSent: result.customerConfirmationSent }
+      : {}),
     ...(typeof result.notificationSent === "boolean"
       ? { notificationSent: result.notificationSent }
       : {}),

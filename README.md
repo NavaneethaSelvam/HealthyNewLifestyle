@@ -71,10 +71,12 @@ described below.
 
 Contact enquiries, consented newsletter requests, and product reviews can be
 forwarded through the server-side `/api/forms` route to Google Sheets when the
-optional service is configured. Contact and review submissions also send
-notifications to the business's configured email. Reviews remain unpublished
-until manually moderated. Newsletter requests are recorded for the team;
-automatic newsletter delivery is not implemented.
+optional service is configured. Contact submissions send an admin notification
+and customer confirmation; the admin email's Reply action is addressed to the
+customer. Newsletter confirmation is transactional only and is sent only after
+the existing consent checkbox is selected. No marketing emails are sent by
+this integration. Reviews are notified to the business and remain unpublished
+until manually moderated.
 
 The Apps Script URL and shared secret must be configured as server-side
 environment variables. Setup, authorization, deployment, testing, and
