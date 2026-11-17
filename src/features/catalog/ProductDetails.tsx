@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Product, ProductReview } from "@/types/storefront";
 import { useStorefront } from "@/features/cart/StorefrontProvider";
 import { StarRating } from "@/components/storefront/StarRating";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { ProductImage } from "@/components/storefront/ProductImage";
 import { getRelatedProducts } from "@/features/catalog/products-data";
-import { getReviewsForProduct, addReview } from "@/services/reviewService";
+import { getReviewsForProduct } from "@/services/reviewService";
 import { getStorageItem, setStorageItem, STORAGE_KEYS } from "@/services/storage";
+import { submitCustomerForm } from "@/services/customerForms";
 
 export function ProductDetails({ product }: { product: Product }) {
   const router = useRouter();
@@ -30,6 +31,10 @@ export function ProductDetails({ product }: { product: Product }) {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [reviewNotificationSent, setReviewNotificationSent] = useState(true);
+  const reviewRequestRef = useRef<{ signature: string; id: string } | null>(null);
 
   useEffect(() => {
     const reviewTimer = window.setTimeout(
@@ -75,31 +80,56 @@ export function ProductDetails({ product }: { product: Product }) {
     router.push("/checkout");
   };
 
-  const handleReviewSubmit = (e: React.FormEvent) => {
+  const handleReviewSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (reviewSubmitting || !e.currentTarget.reportValidity()) return;
     if (!reviewName.trim() || !reviewComment.trim()) {
       addToast({ type: "error", message: "Please provide your name and review comment." });
       return;
     }
 
-    const created = addReview({
+    const submission = {
+      operation: "review" as const,
       productId: product.id,
-      userName: reviewName.trim(),
+      productName: product.name,
       rating: reviewRating,
-      title: reviewTitle.trim() || "Customer review",
+      name: reviewName.trim(),
+      title: reviewTitle.trim(),
       comment: reviewComment.trim(),
-    });
+    };
+    const signature = JSON.stringify(submission);
+    const submissionId =
+      reviewRequestRef.current?.signature === signature
+        ? reviewRequestRef.current.id
+        : window.crypto.randomUUID();
+    reviewRequestRef.current = { signature, id: submissionId };
+    setReviewSubmitting(true);
+    setReviewError("");
 
-    setReviews((prev) => [created, ...prev]);
-    setReviewName("");
-    setReviewTitle("");
-    setReviewComment("");
-    setReviewSubmitted(true);
-    addToast({
-      type: "success",
-      title: "Review Submitted",
-      message: "Your review is saved in this browser and has not been published.",
-    });
+    try {
+      const result = await submitCustomerForm({ ...submission, submissionId });
+      setReviewSubmitted(true);
+      setReviewNotificationSent(result.notificationSent !== false);
+      setReviewName("");
+      setReviewTitle("");
+      setReviewComment("");
+      reviewRequestRef.current = null;
+      addToast({
+        type: result.notificationSent === false ? "info" : "success",
+        title: result.notificationSent === false ? "Review recorded" : "Review received",
+        message:
+          result.notificationSent === false
+            ? "Your review was recorded, but the moderation email could not be sent."
+            : "Your review was sent for moderation and has not been published.",
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Your review could not be sent. Please try again.";
+      setReviewError(errorMessage);
+      addToast({ type: "error", message: errorMessage });
+    } finally {
+      setReviewSubmitting(false);
+    }
   };
 
   return (
@@ -492,7 +522,7 @@ export function ProductDetails({ product }: { product: Product }) {
                   <div className="hnl-review-form-col">
                     <form className="hnl-review-form" onSubmit={handleReviewSubmit}>
                       <h3>Write a Review</h3>
-                      <p>Feedback is stored only in this browser and is not published or verified as a purchase.</p>
+                      <p>Reviews are sent to our team for moderation and are not published or verified as a purchase.</p>
 
                       <div className="hnl-field">
                         <label className="hnl-field-label">Overall Rating</label>
@@ -510,8 +540,12 @@ export function ProductDetails({ product }: { product: Product }) {
                           id="rev-name"
                           type="text"
                           className="hnl-input"
+                          maxLength={100}
                           value={reviewName}
-                          onChange={(e) => setReviewName(e.target.value)}
+                          onChange={(e) => {
+                            setReviewName(e.target.value);
+                            setReviewSubmitted(false);
+                          }}
                           placeholder="Your name"
                           required
                         />
@@ -523,8 +557,12 @@ export function ProductDetails({ product }: { product: Product }) {
                           id="rev-title"
                           type="text"
                           className="hnl-input"
+                          maxLength={120}
                           value={reviewTitle}
-                          onChange={(e) => setReviewTitle(e.target.value)}
+                          onChange={(e) => {
+                            setReviewTitle(e.target.value);
+                            setReviewSubmitted(false);
+                          }}
                           placeholder="A short summary (optional)"
                         />
                       </div>
@@ -535,19 +573,30 @@ export function ProductDetails({ product }: { product: Product }) {
                           id="rev-comment"
                           rows={4}
                           className="hnl-textarea"
+                          maxLength={5000}
                           value={reviewComment}
-                          onChange={(e) => setReviewComment(e.target.value)}
-                          placeholder="Share your experience (stored only in this browser)"
+                          onChange={(e) => {
+                            setReviewComment(e.target.value);
+                            setReviewSubmitted(false);
+                          }}
+                          placeholder="Share your experience"
                           required
                         />
                       </div>
 
-                      <button type="submit" className="hnl-button hnl-button--full">
-                        Submit Review
+                      <button type="submit" className="hnl-button hnl-button--full" disabled={reviewSubmitting} aria-busy={reviewSubmitting}>
+                        {reviewSubmitting ? "Sending review…" : "Submit Review"}
                       </button>
 
                       {reviewSubmitted && (
-                        <p className="hnl-review-success-msg">Your review is saved only in this browser and has not been published.</p>
+                        <p className="hnl-review-success-msg" role="status">
+                          {reviewNotificationSent
+                            ? "Your review was sent for moderation. It has not been published."
+                            : "Your review was recorded, but the moderation email could not be sent."}
+                        </p>
+                      )}
+                      {reviewError && (
+                        <p className="hnl-review-error-msg" role="alert">{reviewError}</p>
                       )}
                     </form>
                   </div>

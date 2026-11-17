@@ -5921,12 +5921,15 @@ html.hnl-motion-enabled
 }
 
 .hnl-newsletter-form {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
   width: 100%;
 }
 
 .hnl-newsletter-input {
+  min-width: 0;
   flex: 1;
   padding: 13px 18px;
   border-radius: 6px;
@@ -5996,6 +5999,37 @@ html.hnl-motion-enabled
   flex-shrink: 0;
 }
 
+.hnl-newsletter-consent {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 9px;
+  color: rgba(255, 250, 242, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hnl-newsletter-consent input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: #e1bf7b;
+  flex: 0 0 auto;
+}
+
+.hnl-newsletter-consent a {
+  color: #f0d99f;
+  text-underline-offset: 3px;
+}
+
+.hnl-newsletter-error {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: #ffd1c8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* Responsive Media Queries */
 @media (max-width: 1024px) {
   .hnl-trust-grid {
@@ -6043,7 +6077,12 @@ html.hnl-motion-enabled
   }
 
   .hnl-newsletter-form {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hnl-newsletter-consent,
+  .hnl-newsletter-error {
+    grid-column: 1;
   }
 
   .hnl-newsletter-submit {
@@ -7471,6 +7510,14 @@ html.hnl-motion-enabled
   font-weight: 500;
   margin-top: 10px;
   text-align: center;
+}
+
+.hnl-review-error-msg,
+.hnl-contact-form-error {
+  margin: 10px 0 0;
+  color: #a33b2a;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* ==========================================================================

@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useStorefront } from "@/features/cart/StorefrontProvider";
+import { submitCustomerForm } from "@/services/customerForms";
 
 const contactFaqs = [
   {
@@ -39,20 +40,59 @@ export default function ContactPage() {
   const [topic, setTopic] = useState("Product Quality & Inquiries");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState("");
+  const [notificationSent, setNotificationSent] = useState(true);
+  const requestRef = useRef<{ signature: string; id: string } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!name.trim() || !mobile.trim() || !message.trim()) {
+    if (isSubmitting || !e.currentTarget.reportValidity()) return;
+
+    const submission = {
+      operation: "contact" as const,
+      name: name.trim(),
+      email: email.trim(),
+      phone: mobile.trim(),
+      topic: topic.trim(),
+      message: message.trim(),
+    };
+    if (!submission.name || !submission.phone || !submission.topic || !submission.message) {
       addToast({ type: "error", message: "Please fill in all required fields." });
       return;
     }
 
-    setSubmitted(true);
-    addToast({
-      type: "success",
-      title: "Message Transmitted",
-      message: "Thank you for reaching out! Our Vellore team will call you within 24 hours.",
-    });
+    const signature = JSON.stringify(submission);
+    const submissionId =
+      requestRef.current?.signature === signature
+        ? requestRef.current.id
+        : window.crypto.randomUUID();
+    requestRef.current = { signature, id: submissionId };
+    setIsSubmitting(true);
+    setSubmissionError("");
+
+    try {
+      const result = await submitCustomerForm({ ...submission, submissionId });
+      setNotificationSent(result.notificationSent !== false);
+      setSubmitted(true);
+      addToast({
+        type: result.notificationSent === false ? "info" : "success",
+        title: result.notificationSent === false ? "Enquiry recorded" : "Enquiry sent",
+        message:
+          result.notificationSent === false
+            ? "Your enquiry was recorded, but the team email notification could not be sent."
+            : result.duplicate
+              ? "This enquiry was already received by our team."
+              : "Thank you for reaching out to OrganicandNutrition.",
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Your enquiry could not be sent. Please try again.";
+      setSubmissionError(errorMessage);
+      addToast({ type: "error", message: errorMessage });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,8 +160,9 @@ export default function ContactPage() {
                   <div className="hnl-success-badge-icon">✓</div>
                   <h3>Thank you, {name}!</h3>
                   <p>
-                    Your message has been sent to our customer relations team in
-                    Vellore. We will contact you at {mobile} soon.
+                    {notificationSent
+                      ? `Your enquiry has been recorded. Our team can reach you at ${mobile}.`
+                      : "Your enquiry was recorded, but the team email notification could not be sent. Please call 6381243416 to follow up."}
                   </p>
                   <button
                     type="button"
@@ -129,6 +170,8 @@ export default function ContactPage() {
                     onClick={() => {
                       setSubmitted(false);
                       setMessage("");
+                      setSubmissionError("");
+                      requestRef.current = null;
                     }}
                   >
                     Send another message
@@ -145,6 +188,7 @@ export default function ContactPage() {
                         id="contact-name"
                         type="text"
                         className="hnl-input"
+                        maxLength={100}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="e.g. S. Ramanathan"
@@ -160,6 +204,8 @@ export default function ContactPage() {
                         id="contact-phone"
                         type="tel"
                         className="hnl-input"
+                        maxLength={30}
+                        autoComplete="tel"
                         value={mobile}
                         onChange={(e) => setMobile(e.target.value)}
                         placeholder="e.g. 98401 23456"
@@ -175,6 +221,8 @@ export default function ContactPage() {
                         id="contact-email"
                         type="email"
                         className="hnl-input"
+                        maxLength={254}
+                        autoComplete="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="e.g. ramanathan@example.com"
@@ -217,6 +265,7 @@ export default function ContactPage() {
                         id="contact-message"
                         rows={4}
                         className="hnl-textarea"
+                        maxLength={5000}
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
                         placeholder="Please share details about your inquiry or requirements..."
@@ -225,9 +274,19 @@ export default function ContactPage() {
                     </div>
                   </div>
 
-                  <button type="submit" className="hnl-button hnl-button--full">
-                    Submit Enquiry →
+                  <button
+                    type="submit"
+                    className="hnl-button hnl-button--full"
+                    disabled={isSubmitting}
+                    aria-busy={isSubmitting}
+                  >
+                    {isSubmitting ? "Sending enquiry…" : "Submit Enquiry →"}
                   </button>
+                  {submissionError && (
+                    <p className="hnl-contact-form-error" role="alert">
+                      {submissionError}
+                    </p>
+                  )}
                 </form>
               )}
             </motion.section>

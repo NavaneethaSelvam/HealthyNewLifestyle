@@ -62,8 +62,26 @@ discarded. If stored entries do not have corresponding product details, they
 remain removable but cannot be priced or checked out.
 
 The only confirmed company details are OrganicandNutrition, Building No. 24,
-Ashok Biller, Vellore, and 6381243416. There is no backend, database,
-authentication, payment processing, or RustFS connection.
+Ashok Biller, Vellore, and 6381243416. There is no commerce database,
+authentication, payment processing, delivery integration, or RustFS
+connection. Customer forms can use the optional Google Apps Script integration
+described below.
+
+## Customer forms
+
+Contact enquiries, consented newsletter requests, and product reviews can be
+forwarded through the server-side `/api/forms` route to Google Sheets when the
+optional service is configured. Contact and review submissions also send
+notifications to the business's configured email. Reviews remain unpublished
+until manually moderated. Newsletter requests are recorded for the team;
+automatic newsletter delivery is not implemented.
+
+The Apps Script URL and shared secret must be configured as server-side
+environment variables. Setup, authorization, deployment, testing, and
+redeployment instructions are in
+[`google-apps-script/README.md`](./google-apps-script/README.md). Copy
+`.env.example` to `.env.local` for local setup; never commit `.env.local` or
+put the shared secret in a `NEXT_PUBLIC_` variable.
 
 ## Source structure
 
